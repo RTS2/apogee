@@ -1,0 +1,28 @@
+% set SCOPE(imagename) [exec date +%j%H]
+16815
+% set SCOPE(driftsamp) 100000
+driftcalib
+100000
+% invalid command name ".main.vdec"
+% driftcalc
+invalid command name ".main.vdec"
+% driftscan 0 0
+Drift scan using delay = , rows = 512
+syntax error in expression "/1000"
+% set $SCOPE(imagename) [exec date +%j%H]
+16815
+% set $SCOPE(driftsamp) 100000
+100000
+% set $SCOPE(driftdcalc) 100000
+100000
+% set $SCOPE(driftrows) 60
+60
+% driftcalib
+invalid command name ".main.vdec"
+% driftcalc
+invalid command name ".main.vdec"
+% driftscan 0 0
+Drift scan using delay = , rows = 512
+syntax error in expression "/1000"
+% driftscan 60 60000
+

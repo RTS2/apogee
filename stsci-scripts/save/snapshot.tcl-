@@ -1,0 +1,74 @@
+#
+# Define the global environment, everything lives under /opt/apogee
+# Change TKAPOGEE to move the code somewhere else
+#
+set TKAPOGEE /opt/apogee
+
+source  $TKAPOGEE/scripts/nogui.tcl
+
+
+#set SCOPE(StartCol) $CONFIG(geometry.StartCol)
+#set SCOPE(StartRow) $CONFIG(geometry.StartRow)
+#set SCOPE(NumCols)  $CONFIG(geometry.NumCols)
+#set SCOPE(NumRows)  $CONFIG(geometry.NumRows)
+
+#set SCOPE(StartCol) "0"
+#set SCOPE(StartRow) "0"
+#set SCOPE(NumCols) "512"
+#set SCOPE(NumRows) "512"
+#set LASTBIN(x) "2"
+#set LASTBIN(y) "2"
+
+#set CAMSTATUS(StartCol) 0
+#set CAMSTATUS(StartRow) 0
+#set CAMSTATUS(ExposureBinX) 2
+#set CAMSTATUS(ExposureBinY) 2
+#set CAMSTATUS(ExposureNumX) 512
+#set CAMSTATUS(ExposureNumY) 512
+#set CAMSTATUS(ExposureRows) 512
+#set CAMSTATUS(ExposureColumns) 512
+#set CAMSTATUS(NumX) 512
+#set CAMSTATUS(NumY) 512
+#set CAMSTATUS(NumCols) 512
+#set CAMSTATUS(NumRows) 512
+#set CAMSTATUS(ImgColumns) 512
+#set CAMSTATUS(ImgRows) 512
+#set CAMSTATUS(BinX) 2
+#set CAMSTATUS(BinY) 2
+
+#set LASTBIN(x) 2
+#set LASTBIN(y) 2
+
+#set CONFIG(geometry.StartCol) 0
+#set CONFIG(geometry.StartRow) 0
+
+
+
+#using the .apgui.tcl.snapshot.bin2 these are already defined properly
+#set CONFIG(geometry.BinX) 2
+#set CONFIG(geometry.BinY) 2
+# but do to the bug in watchconfig, these are necessary to get a 512x512 image.
+set CONFIG(geometry.NumCols) 512
+set CONFIG(geometry.NumRows) 512
+
+set SCOPE(imagename) [exec date +%j%H%M]
+set SCOPE(overwrite) 1
+set SCOPE(exposure) 4.3
+set SCOPE(shutter) 1
+set SCOPE(exptype) "Object"
+set SCOPE(target) "foo"
+
+#printcamdata
+#printscopedata
+
+# this line in nogui.tcl is important to actually set the values into C++
+# but don't use it here, I think.
+#trace variable CONFIG w watchconfig
+
+# this line in nogui.tcl seems to fix the exposure time to 0.1 sec or
+# something. so comment it out in nogui.tcl
+#trace variable SCOPE w watchscope
+
+# take the picture, display it in ds9, and save it to disk.
+obstodisk 1
+exit

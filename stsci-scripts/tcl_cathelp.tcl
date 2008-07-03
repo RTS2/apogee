@@ -1,0 +1,16 @@
+set APHELP(dss) "On if the DSS image dataset is available"
+set APHELP(dss_dir) "Location of DSS data"
+set APHELP(gsc) "On if the GSC catalog is available"
+set APHELP(gsc_dir) "Location of GSC catalog data"
+set APHELP(gsc_min) "Maximum magnitude to display from GSC"
+set APHELP(gsc_max) "Maximum magnitude to display from GSC"
+set APHELP(rngc_dir) "Location of RNGC catalog data"
+set APHELP(rngc) "On if the RNGC catalog is available"
+set APHELP(rngc_min) "Minimum magnitude to display from RNGC"
+set APHELP(rngc_max) "Maximum magnitude to display from RNGC"
+set APHELP(usno_dir) "Location of USNO catalog data"
+set APHELP(usno) "On if the USNO catalog is available"
+set APHELP(usno_min) "Minimum magnitude to display from USNO"
+set APHELP(usno_max) "Maximum magnitude to display from USNO"
+
+

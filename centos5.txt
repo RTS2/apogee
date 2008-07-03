@@ -1,0 +1,23 @@
+
+
+yum install tcl tcl-devel tk tk-devel libusb libusb-devel
+cd /opt/apogee/extern
+tar xvzf fitsTcl2.1.5.tar.gz
+cd fitsTcl
+./configure --prefix=/opt/apogee
+make 
+make install
+cd /opt/apogee/lib
+rm libfitsTcl.so
+ln -s libfitstcl.so libfitsTcl.so
+
+cd /opt/apogee/src/ccd
+make clean
+make 
+touch Shared/*.o
+make 
+make install
+
+cd /opt/apogee/src/apogee
+make clean
+make -f makefile5 test_altau

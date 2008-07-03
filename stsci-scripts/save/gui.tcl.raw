@@ -1,0 +1,1464 @@
+
+
+toplevel .status -width 500 -height 100
+wm title .status "Apogee Camera Control"
+wm geometry .status +20+30
+label .status.msg -bg LightBlue -fg Black -text Initialising -width 50 -font "Helvetica 30 bold"
+pack .status.msg
+proc showstatus { msg } {
+  .status.msg configure -text "$msg"
+  update
+}
+
+
+set TKAPOGEE /opt/apogee
+set libs /opt/apogee/lib
+showstatus "Loading FitsTcl"
+load $libs/libfitsTcl.so
+package ifneeded gsc 3.1       [load $libs/libgsc.so]
+package ifneeded dss 3.1       [load $libs/libdss.so]
+package ifneeded oracle 2.1    [load $libs/liboracle.so]
+package ifneeded xtcs 3.1      [load $libs/libxtcs.so]
+package ifneeded BLT 2.4       [load $libs/libBLT24.so]
+package ifneeded ccd 1.0       [load $libs/libccd.so]
+showstatus "Loading Digital Sky survey access"
+package require dss
+showstatus "Loading GSC catalog access"
+package require gsc
+showstatus "Loading Oracle"
+package require oracle
+showstatus "Loading graphics package"
+package require BLT
+namespace import blt::graph
+showstatus "Loading CCD package"
+package require ccd
+lappend auto_path $libs/BWidget-1.2.1
+package require BWidget
+
+
+
+proc getDSS {name ra dec xsize ysize } {
+   set fout [open /tmp/dsscmd w]
+   puts $fout "$name [split $ra :] [split $dec :] $xsize $ysize"
+   close $fout
+   dss -i /tmp/dsscmd
+   set f [glob $name*.fits]
+   checkDisplay
+   exec xpaset -p ds9 file $f
+}
+
+proc checkDisplay { } {
+   set x ""
+   catch {set x [exec xpaget ds9]}
+   if { $x == "" } {
+      exec /opt/apogee/bin/ds9 &
+   }
+}
+
+proc getGSC { ra dec xsize ysize } {
+   if { $xsize < 0 } {
+      set results [exec cat testgsc.dat]
+   } else {
+      set results [cmdGFind $ra $dec $xsize $ysize]
+   }
+   set byline [lrange [split $results "\n"] 1 end]
+   exec xpaset -p ds9 regions deleteall                                                
+   foreach l $byline {
+      set lra  [join [lrange $l 1 3] :]
+      set ldec [join [lrange $l 4 6] :]
+      exec xpaset -p ds9 regions circle $lra $ldec 5.
+   }
+}
+
+proc locateObjs { } {
+   set fin [open test.cat r]
+   exec xpaset -p ds9 regions coordformat xy
+   exec xpaset -p ds9 regions deleteall                                                
+   set i 7
+   while { $i > 0 } {gets $fin rec ;  incr i -1}
+   while { [gets $fin rec] > -1 } {
+      exec xpaset -p ds9 regions circle [lindex $rec 4] [lindex $rec 5] 5.
+   }
+}
+
+proc getRegion { } {
+   set res [exec xpaget  ds9 regions]
+   set i [lsearch $res "image\;box"]
+   if { $i < 0 } {
+      exec  xpaset -p ds9 regions deleteall  
+      tk_dialog
+   }
+   set lx [lindex $res [expr $i+1]]
+   set ly [lindex $res [expr $i+2]]
+   set nx [lindex $res [expr $i+3]]
+   set ny [lindex $res [expr $i+4]]
+#  test command for sextractor
+# /opt/apogee/bin/sextractor -DETECT_MINAREA 10 -DETECT_THRESH 30 test207vo.fits        
+}
+
+proc autoIdentify { {imax 20} {type raw} {aspp 1.7} } {
+global X Y F
+    exec sort -r +2 test.cat > stest.dat
+    if { $type == "raw" } {
+     set fin [open stest.dat r]
+     set i 1
+     while { $i < $imax } {
+        gets $fin rec
+        if { [string range $rec 0 0] != "#" } {   
+          set X($i) [lindex $rec 4]
+          set Y($i) [lindex $rec 5]
+          set F($i) [lindex $rec 2]
+          incr i 1
+        }
+     }
+     close $fin
+    } 
+    if { $type == "gsc" } {
+     set fin [open testgsc.dat r]
+     set i 1
+     set DEC 50
+     while { $i < $imax } {
+        gets $fin rec
+        set dec [expr ([lindex $rec 4]*3600+[lindex $rec 5]*60+[lindex $rec 6])  / $aspp]
+        set ra [expr ([lindex $rec 1]*3600+[lindex $rec 2]*60+[lindex $rec 3]) *15. / $aspp]
+        set ra [expr $ra*cos($DEC/180.*3.14159)]
+        set X($i) $ra
+        set Y($i) $dec
+        set F($i) [lindex $rec 7]
+        incr i 1
+     }
+     close $fin
+    } 
+    set i 1
+    while { $i < $imax } {
+       set mind 9999999999.
+       set maxd 0.
+       set j 1
+       while { $j < $imax  } {
+         if { $i != $j } {
+           set d [expr sqrt( ($X($i)-$X($j))*($X($i)-$X($j)) + ($Y($i)-$Y($j))*($Y($i)-$Y($j)) )]
+           if { $d > $maxd } {set maxd $d}
+           if { $d < $mind && $d > 50.} {
+              set mind $d
+              set minj($i) $j
+           }
+         }
+         incr j 1
+       }
+       set M($i) [expr $maxd / $mind]
+       puts stdout "$i $mind $minj($i)"
+       incr i 1
+    }
+}
+
+
+
+proc choosedir { type name} {
+global CALS CATALOGS SCOPE
+   if { $type == "data" } {
+     set cfg [tk_chooseDirectory -initialdir $SCOPE(datadir)/$name]
+     set SCOPE(datadir) $cfg
+     .main.seldir configure -text "$cfg"
+   } else {
+     set cfg [tk_chooseDirectory -initialdir $CALS(home)/$name]
+   }
+   if { [file exists $cfg] == 0 } {
+      exec mkdir -p $cfg
+   }
+   switch $type {
+       calibrations {set CALS($name,dir) $cfg }
+       catalogs     {set CATALOGS($name,dir) $cfg }
+   }
+}
+
+set CALS(home) $env(HOME)/calibrations
+set CALS(zero,dir) $CALS(home)/zero
+set CALS(dark,dir) $CALS(home)/dark
+set CALS(flat,dir) $CALS(home)/flat
+set CALS(skyflat,dir) $CALS(home)/skyflat
+set SCOPE(datadir) $env(HOME)
+
+proc inspectapi { object } {
+global CCAPIR CCAPIW
+  set all [info commands]
+  foreach i $all { 
+     set s [split $i _]
+     if { [lindex $s 0] == $object } {
+        if { [lindex $s end] == "get" } {
+           set name [join [lrange $s 1 [expr [llength $s]-2]] _]
+           set CCAPIR($name) cget
+        }
+        if { [lindex $s end] == "set" } {
+           set name [join [lrange $s 1 [expr [llength $s]-2]] _]
+           set CCAPIW($name) configure
+        }
+        if { [lindex $s 1] == "read" } {
+           set name [join [lrange $s 1 end] _]
+           set CCAPIR($name) method
+        }
+        if { [lindex $s 1] == "write" } {
+           set name [join [lrange $s 1 end] _]
+           set CCAPIW($name) method
+        }
+     }
+  }
+}
+
+
+
+proc printcamdata { {id 0} } {
+global CAMERAS CAMSTATUS
+    foreach i [lsort [array names CAMSTATUS]] { 
+        puts stdout "$i = $CAMSTATUS($i)"
+    }
+}
+
+
+proc refreshcamdata { {id 0} } {
+global CAMSTATUS CCAPIR CCAPI CAMERAS CONFIG
+    set camera $CAMERAS($id)
+    foreach i [lsort [array names CCAPIR]] { 
+       if { $CCAPIR($i) == "method" } {
+          set CAMSTATUS([string range $i 5 end]) [$camera $i]
+          set name [string range $i 5 end]
+          if { [info exists CCAPI($name)] } {
+             set CONFIG($CCAPI($name)) $CAMSTATUS($name)
+          }
+       }
+       if { $CCAPIR($i) == "cget" } {
+          set name [string range $i 2 end]
+          set CAMSTATUS($name) [$camera cget -$i]
+          if { [info exists CCAPI($name)] } {
+             set CONFIG($CCAPI($name)) $CAMSTATUS($name)
+          }
+       }
+    }
+}
+
+
+proc get_temp { {id 0} } {
+global CAMERAS
+   set t [$CAMERAS($id) read_Temperature]
+   return $t
+}
+
+
+proc setpoint { op {t 10.0} {id 0} } {
+global CCD_TMP SETPOINTS CAMERAS
+    set op [string toupper $op]
+    set camera $CAMERAS($id)
+    switch $op {
+       SET { $camera write_CoolerMode 1 
+             $camera write_CoolerSetPoint $t 
+           }
+       AMB { $camera write_CoolerMode 2 
+           }
+       OFF { $camera write_CoolerMode 0
+           }
+    }
+    if { $op == "SET" } {
+       set SETPOINTS $t
+    } else {
+       set SETPOINTS 99
+    }
+}
+   
+
+set TEMPS ""
+set STATUS(tempgraph) 1
+
+
+
+
+proc monitortemp { {id 0} } {
+global TEMPS AVGTEMPS STATUS
+  if { $STATUS(tempgraph) }  {
+   set t [lindex [get_temp $id] 0]
+   if { $TEMPS == "" } {
+       set TEMPS "$t $t $t $t $t $t $t $t $t $t"
+   } else {
+       set TEMPS [lrange "$t $TEMPS" 0 9]
+   }
+   set i 0
+   set temp 0
+   while { $i < 10 } {set temp [expr $temp+[lindex $TEMPS $i]] ; incr i 1}
+   set AVGTEMPS [expr $temp/10.0]
+   plottemp
+   after 5000 monitortemp
+  }
+}
+
+ 
+proc plottemp { } {
+global ydata ysetp TEMPWIDGET AVGTEMPS SETPOINTS
+   set ydata "[lrange [split $ydata] 1 59] $AVGTEMPS"
+   if { $SETPOINTS == 99 }  {
+      set ysetp "[lrange [split $ysetp] 1 59] $AVGTEMPS"
+   } else {
+      set ysetp "[lrange [split $ysetp] 1 59] $SETPOINTS"
+   }
+   $TEMPWIDGET element configure Temp -symbol none -ydata $ydata
+   $TEMPWIDGET element configure SetPoint -color red -symbol none -ydata $ysetp
+   setminmax
+}
+
+
+proc setminmax { } {
+global ydata ysetp TEMPWIDGET
+  set min  9999999
+  set max -9999999 
+  foreach i $ydata { 
+     if { $i < $min } { set min $i } 
+     if { $i > $max } { set max $i } 
+  }
+  foreach i $ysetp { 
+     if { $i < $min } { set min $i } 
+     if { $i > $max } { set max $i } 
+  }
+  set r [expr ($max-$min)/5.+1.]
+  $TEMPWIDGET yaxis configure -min [expr $min-$r] -max [expr $max+$r]
+}
+
+
+
+
+
+
+set PI 3.14159265359
+
+proc tlabel { atime } {
+global PI
+    if { $atime < 0 } {
+       set asign "-"
+       set atime [expr -$atime]
+    } else {
+       set asign ""
+    }
+    set atime [expr $atime/$PI*12.0]
+    set ahrs [expr int($atime)]
+    set amins [expr int(60*($atime-$ahrs))]
+    set asecs [expr int(($atime-$ahrs-$amins/60.0)*3600.0)]
+    set out ""
+    if { $ahrs < 10 } {
+      set ahrs "0$ahrs"
+    }
+    if { $amins < 10 } {
+      set amins "0$amins"
+    }
+    if { $asecs < 10 } {
+      set asecs "0$asecs"
+    }
+    return "$asign$ahrs:$amins:$asecs"
+}
+                                                                                
+
+
+proc showconfig { } {
+  if { [winfo ismapped .p] } {
+     wm withdraw .p
+  } else {
+     wm deiconify .p
+  }
+}
+
+set STATUS(busy) 0
+
+proc snapshot { name exp {bcorr 0} {shutter 1} {id 0} } {
+global STATUS CFG CAMERAS DEBUG SCOPE
+   if { $STATUS(busy) == 0 } {
+     set STATUS(busy) 1
+# this config gives 10 columns of bias plus 512 image
+#   config_camera 8 3 522 511 1 1 $exp 0 0 $id
+# this config gives 3 trailing columns of bias
+#   config_camera 8 3 130 128 4 4 $exp 0 0 $id
+# this config gives 1 trailing columns of bias and lower noise
+#   config_camera 8 3 128 128 4 4 $exp 0 0 $id
+# this config gives 1 leading columns of bias and lower noise
+#   config_camera 8 3 256 256 2 2 $exp 0 0 $id
+# this config gives 3 trailing columns of bias
+#   config_camera 8 3 64 64 8 8 $exp 0 0 $id
+#    config_camera $CFG(bic) $CFG(bir) [expr ($CFG(imgcols)+1)/$CFG(hflush)] [expr ($CFG(imgrows)+1)/$CFG(vflush)] $CFG(hflush) $CFG(vflush) $exp 0 0 $id
+    set camera $CAMERAS($id)
+    $camera Expose $exp $shutter   
+    set SCOPE(exposure) $exp
+    set SCOPE(shutter) $shutter
+    set SCOPE(imagetype) OBJECT
+    if { $DEBUG } {debuglog "exposing (snapshot)"}
+    after [expr $exp*1000+1000] "grabimage $name.fits $bcorr $id"
+  }
+}
+
+proc snapslice { name exp {id 0} {shutter 1} } {
+global STATUS CFG
+   if { $STATUS(busy) == 0 } {
+     set STATUS(busy) 1
+     config_slice $CFG(bic) $CFG(bir) [expr ($CFG(imgcols)+1)/$CFG(hflush)] [expr ($CFG(imgrows)+1)/$CFG(vflush)] $CFG(hflush) $CFG(vflush) $id
+     start_exposure $shutter 0 0 0 $id   
+     puts stdout "exposing"
+     after [expr $exp*10+1000] "grabslice $name.fits $id"
+  }
+}
+
+proc testgeometry { {id 0} } {
+global CONFIG CAMERAS
+   set exp 0.01
+   set shutter 0
+   set res "illegal"
+   set camera $CAMERAS($id)
+   set res [$camera Expose $exp $shutter]
+   return $res
+}
+
+
+
+
+proc snapsleep { name exp {id 0} {shutter 1} } {
+global STATUS CAMERAS SCOPE
+    set camera $CAMERAS($id)
+    $camera Expose $exp $shutter   
+    set SCOPE(exposure) $exp
+    set SCOPE(shutter) $shutter
+    if { $DEBUG } {debuglog "exposing (snapshot)"}
+    set STATUS(busy) 1
+    exec sleep [expr ($exp*10+1000)/1000 + 1] 
+    grabimage $name.fits
+}
+
+
+
+proc flattobuffer { n {id 0} } {
+global STATUS CAMERAS DEBUG CALS SCOPE
+    set camera $CAMERAS($id)
+    set STATUS(busy) 1
+    $camera Expose $CALS(flat,exp) 1  
+    set SCOPE(exposure) $CALS(flat,exp)
+    set SCOPE(shutter) 1
+    set SCOPE(imagetype) FLAT
+    if { $DEBUG } {debuglog "exposing (flattobuffer)"}
+    set timeout [waitforimage [expr int($CALS(flat,exp))] $id]
+    if { $timeout } {
+       puts stdout "TIMEOUT"
+    } else {
+      if { $DEBUG } {debuglog "Reading out..."}
+      $camera BufferImage temp
+      set STATUS(readout) 0
+      store_calib temp FLAT $n 
+    }
+    set STATUS(busy) 0
+}
+
+
+proc waitforimage { exp {id 0} } {
+global CAMERAS STATUS DEBUG
+  set camera $CAMERAS($id)
+  exec sleep 1
+  if { $exp == 0 } {set exp 1}
+  set STATUS(readout) 0
+  set s [$camera read_Status]
+  while { $s != 5 && $exp > 0} {
+     update 
+     exec sleep 1
+     incr exp -1
+     set s [$camera read_Status]
+     if { $DEBUG } {debuglog "waiting $exp $s"}
+  }
+  set STATUS(readout) 1
+  update
+  if { $s != 5 } {
+     return 1
+  }
+  return 0
+}
+
+
+proc darktobuffer { n {id 0} } {
+global STATUS CAMERAS DEBUG CALS SCOPE
+    set camera $CAMERAS($id)
+    set STATUS(busy) 1
+    $camera Expose $CALS(dark,exp) 0  
+    set SCOPE(exposure) $CALS(dark,exp)
+    set SCOPE(shutter) 0
+    set SCOPE(imagetype) DARK
+    if { $DEBUG } {debuglog "exposing (darktobuffer)"}
+    set timeout [waitforimage [expr int($CALS(dark,exp))] $id]
+    if { $timeout } {
+       puts stdout "TIMEOUT"
+    } else {
+      if { $DEBUG } {debuglog "Reading out..."}
+      update
+      $camera BufferImage temp
+      set STATUS(readout) 0
+      store_calib temp DARK $n 
+    }
+    set STATUS(busy) 0
+}
+
+
+proc zerotobuffer { n {id 0} } {
+global STATUS CAMERAS DEBUG CALS SCOPE
+    set camera $CAMERAS($id)
+    set STATUS(busy) 1
+    $camera Expose $CALS(zero,exp) 0  
+    set SCOPE(exposure) $exp
+    set SCOPE(shutter) 0
+    set SCOPE(imagetype) ZERO
+    if { $DEBUG } {debuglog "exposing (zerotobuffer)"}
+    set timeout [waitforimage 1 $id]
+    if { $timeout } {
+       puts stdout "TIMEOUT"
+    } else {
+      if { $DEBUG } {debuglog "Reading out..."}
+      update
+      $camera BufferImage temp
+      set STATUS(readout) 0
+      store_calib temp ZERO $n 
+    }
+    set STATUS(busy) 0
+}
+
+
+proc fskytobuffer { n {id 0} } {
+global STATUS CAMERAS DEBUG CALS SCOPE
+    set camera $CAMERAS($id)
+    set STATUS(busy) 1
+    $camera Expose $CALS(skyflat,exp) 1
+    set SCOPE(exposure) $exp
+    set SCOPE(shutter) 1
+    set SCOPE(imagetype) SKYFLAT
+    if { $DEBUG } {debuglog "exposing (fskytobuffer)"}
+    set timeout [waitforimage 1 $id]
+    if { $timeout } {
+       puts stdout "TIMEOUT"
+    } else {   
+      if { $DEBUG } {debuglog "Reading out..."}
+      $camera BufferImage temp
+      set STATUS(readout) 0
+      store_calib temp FSKY $n 
+    }
+    set STATUS(busy) 0
+}
+
+
+proc obstodisk { n {id 0} } {
+global CAMERAS STATUS SCOPE DEBUG
+    set camera $CAMERAS($id)
+    set STATUS(busy) 1
+    $camera Expose $SCOPE(exposure) $SCOPE(shutter)
+    if { $DEBUG } {debuglog "exposing (obstobuffer)"}
+    if { [expr int($SCOPE(exposure))] > 3 } { 
+       countdown [expr int($SCOPE(exposure))]
+    }
+    set timeout [waitforimage [expr int($SCOPE(exposure))] $id]
+    if { $timeout } {
+       puts stdout "TIMEOUT"
+    } else {   
+      if { $DEBUG } {debuglog "Reading out..."}
+      set d1 [exec date]
+      $camera BufferImage tempobs
+      set d2 [exec date]
+      puts stdout "$d1 $d2"
+      set STATUS(readout) 0
+      set name "$SCOPE(datadir)/[format "$SCOPE(imagename)" $n].fits"
+      saveandshow tempobs $name
+   }
+}
+
+
+proc saveandshow { buffer name } {
+global CAMERAS STATUS SCOPE DEBUG
+      if { [file exists $name] } {
+         if { $SCOPE(overwrite) } {
+            exec rm -f $name
+         } else {
+            set it [ tk_dialog .d "File exists" "The file named\n $name\n already exists, Overwrite it ?" {} -1 No "Yes"]           
+            if { $it } {
+               exec rm -f $name
+            } else {
+               set STATUS(busy) 0
+               set STATUS(abort) 1
+               return
+            }
+         }
+      }
+      if { $SCOPE(autocalibrate) } {
+          loadcalibrations
+          write_calibrated $buffer $SCOPE(exposure) $name 0
+      } else {
+        if { $SCOPE(autobias) } {
+           write_cimage $buffer $SCOPE(exposure) $name
+        } else {
+           write_image $buffer $name
+        }
+      }
+      if { $SCOPE(autodisplay) } {
+        checkDisplay
+        exec xpaset -p ds9 file $name
+      } 
+      set STATUS(busy) 0
+}
+
+set LASTTEMP 0.0
+
+proc loadcalibrations { } {
+global LASTTEMP AVGTEMPS DEBUG SCOPE CALS
+  if { $SCOPE(autocalibrate) } {
+    if { [expr abs($LASTTEMP-$AVGTEMPS)] > 1.0 } {
+       set tnow [expr int($AVGTEMPS)]
+       if { [file exists $CALS(zero,dir)/temp$tnow.fits] } {
+          if { $DEBUG } {debuglog "loading calibration library data from  $CALS(zero,dir)/temp$tnow.fits"}
+          read_image CALIBRATION-ZERO  $CALS(zero,dir)/temp$tnow.fits
+       }
+       if { [file exists $CALS(dark,dir)/temp$tnow.fits] } {
+          if { $DEBUG } {debuglog "loading calibration library data from  $CALS(dark,dir)/temp$tnow.fits"}
+          read_image CALIBRATION-DARK  $CALS(dark,dir)/temp$tnow.fits
+       }
+       if { [file exists $CALS(flat,dir)/temp$tnow.fits] } {
+          if { $DEBUG } {debuglog "loading calibration library data from  $CALS(flat,dir)/temp$tnow.fits"}
+          read_image CALIBRATION-FLAT  $CALS(flat,dir)/temp$tnow.fits
+       }
+       if { [file exists $CALS(skyflat,dir)/temp$tnow.fits] } {
+          if { $DEBUG } {debuglog "loading calibration library data from  $CALS(skyflat,dir)/temp$tnow.fits"}
+          read_image CALIBRATION-FSKY  $CALS(skyflat,dir)/temp$tnow.fits
+       }
+       set LASTTEMP $AVGTEMPS
+    }
+  }
+}
+
+
+proc grabimage { name {bcorr 0} {id 0} } {
+global STATUS CAMERAS DEBUG SCOPE
+    set camera $CAMERAS($id)
+    if { $DEBUG } {debuglog "Reading out..."}
+    $camera BufferImage READOUT
+    if { [file exists $name] } {
+      puts stdout "Overwriting $name"
+      exec rm -f $name
+    }
+    if { $DEBUG } {debuglog "Saving to FITS $name"}
+#   write_calibrated temp $name
+    if { $bcorr } {
+       write_cimage READOUT $SCOPE(exposure) $name
+    } else {
+       write_image READOUT  $name
+    }
+    checkDisplay
+    exec xpaset -p ds9 file $name
+#   show_image test 0
+    set STATUS(busy) 0
+}
+
+
+proc displayimage { name } {
+  set pars [shmem_image $name]
+puts stdout "$pars"
+  set cmd "exec xpaset -p ds9  shm array shmid [lindex $pars 0] [lindex $pars 1] \\\[xdim=[lindex $pars 2],ydim=[lindex $pars 3],bitpix=16\\\]"
+  eval $cmd
+}
+
+proc abortsequence { } {
+global STATUS
+  set STATUS(abort) 1
+  .main.observe configure -text "Observe" -bg gray -relief raised
+  .main.abort configure -bg gray -relief sunken -fg LightGray
+}
+
+
+proc continuousmode { exp {n 9999} {id 0} } {
+global STATUS CAMERAS
+   if { $STATUS(abort) } {set STATUS(abort) 0 ; return}
+   if { $STATUS(busy) } {after 100 continuousmode $exp $n}
+   .main.observe configure -text "continuous" -bg green -relief sunken
+   .main.abort configure -bg orange -relief raised -fg black
+   update
+   set camera $CAMERAS($id)
+   $camera Expose $exp 1
+   $camera BufferImage READOUT
+   displayimage READOUT
+   incr n -1
+   if { $n > 0 } {
+      after 10 continuousmode $exp $n
+   } else {
+      .main.observe configure -text "Observe" -bg gray -relief raised
+      .main.abort configure -bg gray -relief sunken -fg LightGray
+   }
+}
+
+proc observe { op {id 0} } {
+global SCOPE
+  switch $op {
+      region {acquisitionmode}
+      multiple {continuousmode $SCOPE(exposure) 9999 $id}
+  }
+}
+
+
+
+proc waitfortemp { t {cmd bell} } {
+global AVGTEMPS WAITCMD 
+   if { $cmd != "wait" } {set  WAITCMD "$cmd"}
+   if { [expr abs($t-$AVGTEMPS)] < 1.0 } {
+       eval $WAITCMD
+   } else {
+       after 5000 waitfortemp $t wait
+   }
+}
+
+
+proc darklibrary { t high n } {
+   if { $t < $high } {
+      wm title .countdown "countdown - Acquiring darks at $t deg C"
+      setpoint set $t
+      waitfortemp $t "darkframes $n $t $high"
+   }
+}
+
+
+
+proc flatlibrary { t high n } {
+   if { $t < $high } {
+      wm title .countdown "countdown - Acquiring flat-fields at $t deg C"
+      setpoint set $t
+      waitfortemp $t "flatframes $n $t $high"
+   }
+}
+
+proc skyflatlibrary { t high n } {
+   if { $t < $high } {
+      wm title .countdown "countdown - Acquiring skyflat-fields at $t deg C"
+      setpoint set $t
+      waitfortemp $t "skyflatframes $n $t $high"
+   }
+}
+
+
+proc zerolibrary { t high n } {
+   if { $t < $high } {
+      wm title .countdown "countdown - Acquiring zeroes at $t deg C"
+      setpoint set $t
+      waitfortemp $t "zeroframes $n $t $high"
+   }
+}
+
+
+proc flatframes { n  t high } {
+global STATUS CALS
+   set i 0
+   while { $i < $n } {
+      set FRAME $i
+      countdown [expr $CALS(flat,exp)]
+      puts stdout "flat frame $i"
+      flattobuffer $i $CALS(flat,exp)
+      incr i 1
+   }
+   if { [file exists  $CALS(flat,dir)/temp$t.fits] } {
+      exec rm -f $CALS(flat,dir)/temp$t.fits
+   }
+   if { [file exists $CALS(zero,dir)/temp$t.fits] } {
+      read_image CALIBRATION-ZERO  $CALS(zero,dir)/temp$t.fits
+   }
+   if { [file exists $CALS(dark,dir)/temp$t.fits] } {
+      read_image CALIBRATION-DARK  $CALS(dark,dir)/temp$t.fits
+   }
+   write_fimage $CALS(flat,dir)/temp$t.fits $CALS(flat,exp) 0
+   incr t 1
+   flatlibrary $t $high $n 
+   countdown off
+}
+
+proc skyflatframes { n t high } {
+global STATUS CALS
+   set i 0
+   while { $i < $n } {
+      set FRAME $i
+      countdown [expr $CALS(skyflat,exp)]
+      puts stdout "flat frame $i"
+      fskytobuffer $i $CALS(skyflat,exp)
+      incr i 1
+   }
+   if { [file exists  $CALS(skyflat,dir)/temp$t.fits] } {
+      exec rm -f $CALS(skyflat,dir)/temp$t.fits
+   }
+   if { [file exists $CALS(zero,dir)/temp$t.fits] } {
+      read_image CALIBRATION-ZERO  $CALS(zero,dir)/temp$t.fits
+   }
+   if { [file exists $CALS(dark,dir)/temp$t.fits] } {
+      read_image CALIBRATION-DARK  $CALS(dark,dir)/temp$t.fits
+   }
+   write_simage $CALS(skyflat,dir)/temp$t.fits $CALS(skyflat,exp) 0
+   incr t 1
+   skyflatlibrary $t $high $n
+   countdown off
+}
+
+proc darkframes { n t high } {
+global STATUS FRAME CALS
+   set i 1
+   while { $i <= $n } {
+      set FRAME $i
+      countdown [expr $CALS(dark,exp)]
+      puts stdout "dark frame $i"
+      darktobuffer $i 
+      incr i 1
+   }
+   if { [file exists  $CALS(dark,dir)/temp$t.fits] } {
+      exec rm -f $CALS(dark,dir)/temp$t.fits
+   }
+   if { [file exists $CALS(zero,dir)/temp$t.fits] } {
+      read_image CALIBRATION-ZERO  $CALS(zero,dir)/temp$t.fits
+   }
+   write_dimage $CALS(dark,dir)/temp$t.fits $CALS(dark,exp) 0
+   incr t 1
+   darklibrary $t $high $n 
+   countdown off
+}
+
+proc zeroframes { n t high } {
+global STATUS FRAME CALS
+   set i 1
+   while { $i <= $n } {
+      set FRAME $i
+      countdown 1
+      puts stdout "zero frame $i"
+      zerotobuffer $i
+      incr i 1
+   }
+   incr t 1
+   if { [file exists  $CALS(zero,dir)/temp$t.fits] } {
+      exec rm -f $CALS(zero,dir)/temp$t.fits
+   }
+   write_zimage $CALS(zero,dir)/temp$t.fits $CALS(zero,exp) 1
+   zerolibrary $t $high $n 
+   countdown off
+}
+
+
+proc caltest { n exp {t -30} } {
+   catch {exec rm zero$n.fits dark$n.fits}
+   setpoint set $t
+   zeroframes $n 1 $t $t
+   write_zimage zero$n.fits $exp 1 
+   darkframes $n $exp $t $t
+   write_dimage dark$n.fits $exp 1 
+}
+
+proc opencalibrate { type} {
+   wm deiconify .cal
+   .cal.$type.sel invoke
+}
+
+
+proc createcalibrations { type } {
+global CALS CCDID
+   set dt [expr $CALS($type,tmax)-$CALS($type,tmin)+1]
+   set t [format %.2f [expr $dt * $CALS($type,navg) * (9 + $CALS($type,exp))]]
+   set it [ tk_dialog .d "$type calibrations" "Click OK to run a $type calibration library\nsequence of $CALS($type,navg) frames. This will take approx. $t seconds" {} -1 OK "Cancel to select new mode"]      
+   if { $it } {
+      switch $type {
+          zero { zerolibrary $CALS(zero,tmin) $CALS(zero,tmax) $CALS(zero,navg) }
+          dark { darklibrary $CALS(dark,tmin) $CALS(dark,tmax) $CALS(dark,navg) $CALS(dark,exp) }
+          flat { flatlibrary $CALS(flat,tmin) $CALS(flat,tmax) $CALS(flat,navg) $CALS(flat,exp) }
+          skyflat { skyflatlibrary $CALS(skyflat,tmin) $CALS(skyflat,tmax) $CALS(skyflat,navg) $CALS(skyflat,exp) }
+      }
+   }
+}
+
+
+proc  acquisitionmode { } {
+global ACQREGION CONFIG
+  set it [ tk_dialog .d "Acquisition region" "Click New to define a new region,\n OK to use the current region " {} -1 OK "New"]      
+  if {$it} {
+    catch {
+      exec xpaset -p ds9 regions deleteall
+      exec xpaset -p ds9 regions box $ACQREGION(xs) $ACQREGION(ys) $ACQREGION(xe) $ACQREGION(ye)
+    }
+    set it [tk_dialog .d "Edit region" "Resize/Move the region in the\n image display tool then click OK" {} -1 "OK"]
+    set reg [split [exec xpaget ds9 regions] \n]
+    foreach i $reg {
+     if { [string range $i 0 8] == "image;box" } {
+        set r [lrange [split $i ",()"] 1 4]
+        set ACQREGION(xs) [expr int([lindex $r 0] - [lindex $r 2]/2)]
+        set ACQREGION(ys) [expr int([lindex $r 1] - [lindex $r 3]/2)]
+        set ACQREGION(xe) [expr int([lindex $r 0] + [lindex $r 2]/2)]
+        set ACQREGION(ye) [expr int([lindex $r 1] + [lindex $r 3]/2)]
+        puts stdout "selected region $r"
+     }
+    }
+  } 
+  set CONFIG(geometry.StartCol) [expr $ACQREGION(xs)]
+  set CONFIG(geometry.StartRow) [expr $ACQREGION(ys)]
+  set CONFIG(geometry.NumCols) [expr $ACQREGION(xe)-$ACQREGION(xs)+1]
+  set CONFIG(geometry.NumRows) [expr $ACQREGION(ye)-$ACQREGION(ys)+1]
+}
+  
+set ACQREGION(xs) 200
+set ACQREGION(xe) 64
+set ACQREGION(ys) 200
+set ACQREGION(ye) 64
+
+proc toggle { win } {
+   if { [winfo ismapped $win] } { 
+      wm withdraw $win
+   } else {
+      wm deiconify $win
+   }
+}
+
+
+
+set FRAME 1
+set STATUS(readout) 0
+
+proc countdown { time } {
+global FRAME STATUS
+  if { $time == "off" || $STATUS(abort) } {
+     wm withdraw .countdown
+     return
+  }
+  .countdown.f configure -text $FRAME
+  .countdown.t configure -text $time
+  incr time -1
+  if { [winfo ismapped .countdown] == 0 } {
+     wm deiconify .countdown
+     wm geometry .countdown +20+20
+  }
+  if { $time > -1 } {
+     update
+     after 900 countdown $time
+  } else {
+     if { $STATUS(readout) } {
+       .countdown.t configure -text "READING"
+     } else {
+       wm withdraw .countdown
+     }
+  }
+}
+
+proc startsequence { } {
+global SCOPE OBSPARS FRAME STATUS DEBUG
+   set OBSPARS($SCOPE(exptype)) "$SCOPE(exposure) $SCOPE(numframes) $SCOPE(shutter)"
+   set STATUS(abort) 0
+   if { $SCOPE(lobias) > 0 && $SCOPE(hibias) > 0 } {
+      set_biascols $SCOPE(lobias) $SCOPE(hibias)
+   }
+   .main.observe configure -text "working" -bg green -relief sunken
+   .main.abort configure -bg orange -relief raised -fg black
+   set i 1
+   while { $i <= $SCOPE(numframes) && $STATUS(abort) == 0 } {
+      set FRAME $i
+      countdown [expr int($SCOPE(exposure))]
+      if { $DEBUG} {debuglog "$SCOPE(exptype) frame $i"}
+      obstodisk $i 
+      incr i 1
+   }
+   .main.observe configure -text "Observe" -bg gray -relief raised
+   .main.abort configure -bg gray -relief sunken -fg LightGray
+   countdown off
+}
+
+
+showstatus "Building user interface"
+set SCOPE(driftdelay) 300000
+set SCOPE(driftrows) 512
+
+set f "Helvetica -30 bold"
+toplevel .countdown -bg orange -width 535 -height 115
+label .countdown.lf -text "Frame # " -bg orange -font $f
+label .countdown.lt -text "Seconds : " -bg orange -font $f
+label .countdown.f -text "???" -bg orange -font $f
+label .countdown.t -text "???" -bg orange -font $f
+place .countdown.lf -x 10 -y 40
+place .countdown.f -x 140 -y 40
+place .countdown.lt -x 230 -y 40
+place .countdown.t -x 380 -y 40
+wm withdraw .countdown
+
+wm title . "Apogee Camera Control"
+frame .mbar -width 520 -height 30 -bg gray
+menubutton .mbar.file -text "File" -fg black -bg gray -menu .mbar.file.m
+menubutton .mbar.edit -text "Edit" -fg black -bg gray -menu .mbar.edit.m
+menubutton .mbar.observe -text "Observe" -fg black -bg gray -menu .mbar.observe.m
+menubutton .mbar.calib -text "Calibrate" -fg black -bg gray -menu .mbar.calib.m
+menubutton .mbar.help -text "Help" -fg black -bg gray -menu .mbar.help.m
+menubutton .mbar.tools -text "Tools" -fg black -bg gray -menu .mbar.tools.m
+pack .mbar
+place .mbar.file -x 0 -y 0
+place .mbar.edit -x 40 -y 0
+place .mbar.observe -x 80 -y 0
+place .mbar.calib -x 150 -y 0
+place .mbar.tools -x 210 -y 0
+place .mbar.help -x 460 -y 0
+menu .mbar.file.m 
+menu .mbar.edit.m
+menu .mbar.observe.m
+menu .mbar.calib.m
+menu .mbar.tools.m
+menu .mbar.help.m
+.mbar.file.m add command -label "Open" -command fileopen
+.mbar.file.m add command -label "Save" -command filesave
+.mbar.file.m add command -label "Save As" -command filesaveas
+.mbar.file.m add command -label "Exit" -command shutdown
+.mbar.edit.m add command -label "Properties" -command showconfig
+.mbar.observe.m add command -label "Single-frame" -command "observe single"
+.mbar.observe.m add command -label "Continuous" -command "observe multiple"
+.mbar.observe.m add command -label "Snap-region" -command "observe region"
+.mbar.observe.m add command -label "Drift-scan" -command "toggle .drift"
+### NYI .mbar.calib.m add command -label "Focus" -command "opencalibrate focus"
+.mbar.calib.m add command -label "Dark" -command "opencalibrate dark"
+.mbar.calib.m add command -label "Flat" -command "opencalibrate flat"
+.mbar.calib.m add command -label "Sky" -command "opencalibrate sky"
+.mbar.calib.m add command -label "Zero" -command "opencalibrate zero"
+### NYI .mbar.calib.m add command -label "Calculate WCS" -command "calcwcs"
+### NYI .mbar.calib.m add command -label "Collimation" -command "observe collimate"
+### NYI .mbar.tools.m add command -label "Auto-locate" -command autoIdentify
+.mbar.tools.m add command -label "DSS" -command getDSS
+.mbar.tools.m add command -label "GSC" -command getGSC
+### NYI .mbar.tools.m add command -label "USNO" -command getUSNO
+### NYI .mbar.tools.m add command -label "RNGC" -command getRNGC
+
+source $TKAPOGEE/scripts/tele_init.tcl
+frame .main -bg gray -width 520 -height 300
+pack .main -side bottom
+set iy 10
+foreach item "target ra dec observer site latitude longitude" {
+   label .main.l$item -bg gray -fg black -text $item
+   place .main.l$item -x 300 -y $iy
+   entry .main.v$item -bg white -fg black -relief sunken -width 12 -textvariable SCOPE($item)
+   place .main.v$item -x 400 -y $iy
+   incr iy 27  
+}
+button .main.ssite -bg gray -fg black -text "?" -font "Helvetica -10 bold" -command "wm deiconify .psite"
+place .main.ssite -x 491 -y 118
+
+
+SpinBox .main.exposure -width 7 -label "Exposure (in seconds) : " -font fixed -labelfont "fixed"  -range "0.0 1048.75 1" -textvariable SCOPE(exposure)
+place .main.exposure -x 20 -y 20
+SpinBox .main.numexp -width 12 -label "Number of frames : " -font fixed  -labelfont "fixed"  -range "1 1000 1" -textvariable SCOPE(numframes)
+place .main.numexp -x 20 -y 50
+set opts "Object Focus Acquire Flat SkyFlat Dark Zero"
+ComboBox .main.exptype -width 15 -label "Exposure type : " -font fixed -labelfont "fixed"  -values "$opts" -textvariable SCOPE(exptype)
+place .main.exptype -x 20 -y 80
+set SCOPE(exptype) Object
+button .main.seldir -width 24 -text "Configure data directory" -command "choosedir data data"
+place .main.seldir -x 20 -y 110
+label .main.lname -bg gray -fg black -text "File name :"
+place .main.lname -x 20 -y 140
+entry .main.imagename -width 16 -bg white -fg black -textvariable SCOPE(imagename)
+place .main.imagename -x 90 -y 140
+.main.imagename insert 0 test
+button .main.observe -width 10 -height 2 -text "Observe" -bg gray -command startsequence
+button .main.abort -width 10 -height 2 -text "Abort" -bg gray -command abortsequence
+place .main.observe -x 20 -y 170
+place .main.abort -x 117 -y 170
+checkbutton .main.autodisplay -bg gray  -text "Automatic display" -variable SCOPE(autodisplay)
+place .main.autodisplay -x 20 -y 217
+checkbutton .main.overwrite -bg gray  -text "Overwrite files" -variable SCOPE(overwrite)
+place .main.overwrite -x 170 -y 217
+checkbutton .main.autocalib -bg gray  -text "Automatic calibration (uses library frames)" -variable SCOPE(autocalibrate)
+place .main.autocalib -x 20 -y 271
+set SCOPE(lobias) 0
+set SCOPE(hibias) 0
+entry .main.lobias -bg white -fg black -width 6 -textvariable SCOPE(lobias)
+entry .main.hibias -bg white -fg black -width 6 -textvariable SCOPE(hibias)
+place .main.lobias -x 220 -y 244
+place .main.hibias -x 280 -y 244
+
+checkbutton .main.autobias -bg gray  -text "Automatic bias subtraction" -variable SCOPE(autobias)
+place .main.autobias -x 20 -y 244
+.main.abort configure -relief sunken -fg LightGray
+set SCOPE(autodisplay) 1
+set SCOPE(autobias) 0
+set SCOPE(autocalibrate) 0
+set SCOPE(overwrite) 0
+set STATUS(abort) 0
+set STATUS(readout) 0
+toplevel .psite -bg gray -width 225 -height 695
+listbox .psite.l -width 30 -height 40
+pack .psite.l
+wm withdraw .psite
+set fin [open $TKAPOGEE/config/sites.dat r]
+set i 0
+while { $i < 23 } {gets $fin rec ; incr i 1}
+set i 0
+while { [gets $fin rec] > -1 } {
+   set s [split $rec ";"]
+   .psite.l insert end [lindex $s 0]
+   set SITES($i) [string trim "[lindex $s 1] | [lindex $s 2]" ]
+   incr i 1
+}
+close $fin
+bind  .psite.l <Double-1> {pastelocation}
+wm title .psite "double-click to select"
+
+proc pastelocation { } {
+global SITES 
+  set l [.psite.l curselection]
+  set ll [split $SITES($l) |]
+  set lat [lindex $ll 0]
+  set lon [lindex $ll 1]
+  .main.vsite delete 0 end
+  .main.vlatitude delete 0 end
+  .main.vlongitude delete 0 end
+  .main.vlatitude insert 0 "[join [lrange $lat 0 2] :] [lindex $lat 3]"
+  .main.vlongitude insert 0 "[join [lrange $lon 0 2] :] [lindex $lon 3]" 
+  .main.vsite insert 0 "[.psite.l get $l]"
+  wm withdraw .psite
+}
+
+
+showstatus "Loading online help"
+
+source  $TKAPOGEE/scripts/tcl_aphelp.tcl
+source  $TKAPOGEE/scripts/tcl_cathelp.tcl
+source  $TKAPOGEE/scripts/tcl_telehelp.tcl
+source  $TKAPOGEE/scripts/tcl_calhelp.tcl
+showstatus "Loading camera properties"
+toplevel .p 
+wm title .p  "Properties (Alt-p to open/close window)"
+wm geometry .p +20+90
+wm withdraw .p
+NoteBook .p.props -width 520 -height 300
+.p.props insert 1 Telescope -text Telescope
+.p.props insert 2 System -text System
+.p.props insert 3 Geometry -text Geometry
+.p.props insert 4 Temperature -text Temperature
+.p.props insert 5 CCD -text CCD
+.p.props insert 6 Filter -text Filter
+.p.props insert 7 Catalogs -text Catalogs
+pack .p.props
+set spc "                "
+set xsize 220
+set ysize 30
+
+showstatus "Configuring user interface"
+
+set fin [open $TKAPOGEE/config/tcl_config.dat r]
+while { [gets $fin rec] > -1 } {
+   catch {
+   if { [lsearch "Telescope System Geometry Temperature CCD Filter Catalogs" $rec] > -1 } {
+      set idx [expr [lsearch "Telescope System Geometry Temperature CCD Filter Catalogs" $rec] +1]
+      set f [.p.props getframe $rec]
+      set subsys [string tolower $rec]
+      set ix 0
+      set iy 0
+      showstatus "Configuring user interface ($subsys)"
+   } else {
+      set name   [string tolower [lindex $rec 0]]
+      set lname "$name[string range $spc 0 [expr 16-[string length $name]]]"
+      set cname $subsys.[lindex $rec 0]
+      set range   [lindex $rec 1]
+      set default [lindex $rec 2]
+      if { $range == "READONLY" } {
+         label $f.$name -text "$lname" -fg black -bg gray -relief sunken -width 27
+      }
+      if { $range == "URL" } {
+         button $f.$name -text "$lname" -fg black -bg gray -command "choosedir catalogs $name" -width 27
+      }
+      if { $range == "ONOFF" } {
+         ComboBox $f.$name -label "$lname" -helptext "$APHELP($name)" -labelfont "fixed" -bg gray -values "Off On" -width 10 -textvariable CONFIG($cname)
+         $f.$name setvalue first
+      }
+      if { [llength [split $range :]] > 1 } {
+         set vmin [lindex [split $range :] 0]
+         set vmax [lindex [split $range :] 1]
+         SpinBox $f.$name -label "$lname" -helptext "$APHELP($name)" -labelfont "fixed"  -range "$vmin $vmax 1" -width 10 -textvariable CONFIG($cname)
+         set CONFIG($cname) $default
+      }
+      if { [llength [split $range "|"]] > 1 } {
+         set opts [split $range "|"]
+         ComboBox $f.$name -label "$lname" -helptext "$APHELP($name)" -labelfont "fixed"  -values "$opts" -width 10 -textvariable CONFIG($cname)
+         set CONFIG($cname) $default
+      }
+      place $f.$name -x [expr 10+$xsize*$ix] -y [expr 10+$ysize*$iy]
+      incr ix 1
+      if { $ix > 1 } {
+         set ix 0
+         incr iy 1
+      }
+    }
+   }
+}
+close $fin
+
+
+toplevel .cal -bg gray -width 500 -height -250
+wm  title .cal "Calibrations (Alt-c to open/close window)"
+foreach t "zero dark flat skyflat" {
+   frame .cal.$t -bg gray
+   label .cal.$t.l -bg gray -text $t -width 8 
+   checkbutton .cal.$t.auto -text automatic -variable CALS($t,auto)
+   button .cal.$t.sel -text "Select library" -bg gray -command "choosedir calibrations $t"
+   SpinBox .cal.$t.tmin -label "   min temp" -helptext "$APHELP(caltmin)" -labelfont "fixed"  -range "-40 40 1" -width 4 -textvariable CALS($t,tmin)
+   SpinBox .cal.$t.tmax -label "   max temp" -helptext "$APHELP(caltmax)" -labelfont "fixed"  -range "-40 40 1" -width 4 -textvariable CALS($t,tmax)
+   SpinBox .cal.$t.navg -label "   num. frames" -helptext "$APHELP(calnavg)" -labelfont "fixed"  -range "1 100 1" -width 4 -textvariable CALS($t,navg)
+   SpinBox .cal.$t.exp -label "   exposure" -helptext "$APHELP(calexp)" -labelfont "fixed"  -range "0.02 65535. .01" -width 4 -textvariable CALS($t,exp)
+   set CALS($t,tmin) -30
+   set CALS($t,tmax) 10
+   set CALS($t,navg) 10
+   pack .cal.$t.l -side left -fill both -expand yes
+   pack .cal.$t.auto -side left -fill both -expand yes
+   pack .cal.$t.sel -side left -fill both -expand yes
+   pack .cal.$t.tmin -side left -fill both -expand yes
+   pack .cal.$t.tmax -side left -fill both -expand yes
+   pack .cal.$t.navg -side left -fill both -expand yes
+   pack .cal.$t.exp -side left -fill both -expand yes
+   pack .cal.$t -side top -fill both -expand yes
+}
+set CALS(dark,exp) 10
+set CALS(flat,exp) 0.5
+set CALS(skyflat,exp) 0.5
+foreach t "zero dark flat skyflat" {
+   button .cal.run$t -text "Create $t calibrations library" -bg gray -command "createcalibrations $t"
+   pack .cal.run$t -side top -fill both -expand yes
+}
+button .cal.close -text "close" -bg yellow -command "wm withdraw .cal"
+pack .cal.close -side top -fill both -expand yes
+
+showstatus "Loading driftscan properties"
+toplevel .drift 
+wm title .drift "Drift-scan (Alt-d to open/close window)"
+wm geometry .drift 365x327+20+247 
+wm withdraw .drift
+wm title .drift "Drift-scan control"
+label .drift.msg -text "Drift-scan mode is still experimental!"
+place .drift.msg -x 10 -y 10
+label .drift.mmeas -text "Measured per-line drift rate at current DEC is "
+place .drift.mmeas -x 10 -y 40
+entry .drift.vmeas -bg white -fg black -width 8 -textvariable SCOPE(driftsamp)
+place .drift.vmeas -x 290 -y 40
+button .drift.calib -text "Calculate per-line rate for DEC=+00:00:00" -command driftcalib
+place .drift.calib -x 10 -y 70
+label .drift.mbase -text "Per-line drift rate for DEC=+00:00:00 is "
+place .drift.mbase -x 10 -y 100
+entry .drift.vbase -bg white -fg black -width 8 -textvariable SCOPE(driftdelay)
+place .drift.vbase -x 290 -y 100
+label .drift.mrows -text "Number of rows for drift image "
+place .drift.mrows -x 10 -y 130
+entry .drift.vrows -bg white -fg black -width 8 -textvariable SCOPE(driftrows)
+place .drift.vrows -x 290 -y 130
+button .drift.calc -text "Calculate duration and per-line rate in microsecs" -command driftcalc
+place .drift.calc -x 10 -y 160
+label .drift.mdur -text "Total image duration (hh:mm:ss) =  "
+place .drift.mdur -x 10 -y 200
+label .drift.vdur -textvariable SCOPE(driftexp)
+place .drift.vdur -x 290 -y 200
+label .drift.mmsec -text "Microsecsond delay per row =  "
+place .drift.mmsec -x 10 -y 230
+label .drift.vmsec -textvariable SCOPE(driftdcalc)
+place .drift.vmsec -x 290 -y 230
+button .drift.go -text "Start drift scan exposure" -width 46 -height 3 -bg gray -command "driftscan 0 0"
+place .drift.go -x 10 -y 260
+
+
+set TIMES "0"
+set SETPOINTS "0.0"
+set AVGTEMPS "0.0"
+set i -60
+set xdata ""
+set ydata ""
+set ysetp ""
+while { $i < 0 } {
+  lappend xdata $i
+  lappend ydata $AVGTEMPS
+  lappend ysetp $SETPOINTS
+  incr i 1
+}
+
+set f [.p.props getframe Temperature]
+set TEMPWIDGET $f.plot
+graph $f.plot -title "Temperature" -width 500 -height 220
+$f.plot element create Temp
+$f.plot element create SetPoint
+$f.plot element configure Temp -symbol none -xdata $xdata -ydata $ydata
+$f.plot element configure SetPoint -color red -symbol none -xdata $xdata -ydata $ysetp
+place $f.plot -x 0 -y 60
+wm geometry .cal +20+445
+wm withdraw .cal
+update
+
+showstatus "Initializing camera"
+
+source  $TKAPOGEE/scripts/camera_init.tcl
+source  $TKAPOGEE/scripts/tele_init.tcl
+
+foreach i [array names CONFIG] {
+   foreach s "CCD System" {
+     if { [string tolower $s] == [lindex [split $i .] 0] } {
+       set id [string tolower [lindex [split $i .] 1]]
+       set w ".p.props.f$s.$id"
+       if { [winfo exists $w] } {
+          if { [winfo class $w] == "Label" } {
+            puts stdout "$i $s"
+            $w configure -text "$id = $CONFIG($i)" -fg black
+          }
+#          if { [winfo class $w] == "Frame" } {
+#            puts stdout "$i $s"
+#            set CONFIG($id) $CONFIG($i)
+#          }
+       }
+     }
+   }  
+}
+
+
+proc driftscan { {nrow 0} {delay 0} {nblock 1} {shutter 1} {id 0} } {
+global CAMERAS SCOPE DEBUG
+  if { $delay == 0 } {set delay $SCOPE(driftdcalc)}
+  if { $nrow == 0 } {set nrow $SCOPE(driftrows)}
+  if { $DEBUG } {debuglog  "Drift scan using delay = $delay, rows = $nrow"}
+  set camera $CAMERAS($id)
+  $camera configure -m_TDI 1
+  $camera Expose [expr $delay/1000] $shutter
+  $camera BufferDriftScan drift $delay $nrow $nblock
+  set name "$SCOPE(datadir)/$SCOPE(imagename).fits"
+  saveandshow drift $name
+  $camera configure -m_TDI 0
+}
+
+
+proc driftcalib { } {
+global SCOPE
+   set delay $SCOPE(driftsamp)
+   set d [dms_to_radians [.main.vdec get]]
+   set fac [expr cos($d)]
+   set SCOPE(driftdelay) [expr int($delay*$fac)]
+}
+
+proc driftcalc { } {
+global SCOPE CAMSTATUS
+   set delay $SCOPE(driftdelay)
+   set d [dms_to_radians [.main.vdec get]]
+   set fac [expr cos($d)]
+   set SCOPE(driftdcalc) [expr int($delay/$fac)]
+   set t [tlabel [expr $SCOPE(driftdcalc)/1000000.*($CAMSTATUS(NumY)+$SCOPE(driftrows))/3600./12.*3.14159]]
+   set SCOPE(driftexp) $t
+}
+
+set DRIFTDELAY 0
+proc focustest { name exp nstep nshift {id 0} } {
+global CAMERAS DEBUG CAMSTATUS
+  set camera $CAMERAS($id)
+  $camera configure -m_TDI 1
+  $camera Expose 0.02 0
+  set istep 1
+  set ishift 0
+  while { $ishift < $CAMSTATUS(NumY) } {
+     $camera DigitizeLine
+     incr ishift 1
+  }
+  while { $istep <= $nstep } {
+    set it [tk_dialog .d "Focus exposure" "Move to focus position $istep\n then click OK" {} -1 "Cancel" "OK"]
+    if { $it } {
+      if { $istep == $nstep } {set nshift [expr $nshift*2] }
+      $camera write_ForceShutterOpen 1 
+      exec sleep $exp
+      $camera write_ForceShutterOpen 0
+      set ishift 0
+      while { $ishift < $nshift } {
+         $camera DigitizeLine
+         incr ishift 1
+      }
+    } else { 
+       set istep $nstep
+    }
+    incr istep 1
+  }
+  $camera configure -m_TDI 0
+  $camera BufferImage READOUT
+  if { $DEBUG } {debuglog "Saving to FITS $name"}
+  write_image READOUT $name.fits
+}
+
+
+
+
+set CCDID 0
+
+proc watchconfig { arr var op } {
+global CONFIG CAMERAS CCAPI CCAPIW CCDID LASTBIN
+#      puts stdout "$arr $var $op"
+      switch $var {
+           temperature.Target { setpoint set $CONFIG($var) }
+           ccd.Gain    { catch {set_gain $CONFIG(gain) $CCDID} }
+      }
+      foreach i [array names CCAPIW] {
+         if { [string range $i 2 end] == $CCAPI($var) } {
+            set camera $CAMERAS($CCDID)
+puts stdout "setting $i"
+            if { $var == "geometry.BinX" } {
+               set newcols [expr $CONFIG(geometry.NumCols)*$LASTBIN(x)/$CONFIG(geometry.BinX)]
+               set LASTBIN(x) $CONFIG($var)
+               set CONFIG(geometry.NumCols) $newcols
+            }
+            if { $var == "geometry.BinY" } {
+               set newrows [expr $CONFIG(geometry.NumRows)*$LASTBIN(y)/$CONFIG(geometry.BinY)]
+               set LASTBIN(y) $CONFIG($var)
+               set CONFIG(geometry.NumRows) $newrows
+            }
+            $camera configure -$i $CONFIG($var)
+         }
+      }
+      if { [testgeometry] == 0 } {
+         .p.props.fGeometry configure -bg orange
+         bell
+      } else {
+         .p.props.fGeometry configure -bg gray
+      }
+}
+
+proc watchscope { arr var op } {
+global SCOPE OBSPARS
+    switch $var { 
+        exptype {
+                 set SCOPE(exposure)  [lindex $OBSPARS($SCOPE($var)) 0]
+                 set SCOPE(numframes) [lindex $OBSPARS($SCOPE($var)) 1]
+                 set SCOPE(shutter)   [lindex $OBSPARS($SCOPE($var)) 2]
+                }
+    }
+}
+
+set OBSPARS(Object) "1.0 1 1"
+set OBSPARS(Focus)  "0.1 1 1"
+set OBSPARS(Acquire) "1.0 1 1"
+set OBSPARS(Flat)    "1.0 10 1"
+set OBSPARS(Dark)    "100.0 10 0"
+set OBSPARS(Zero)    "0.01 10 0"
+set OBSPARS(Skyflat) "0.1 10 1"
+
+set LASTBIN(x) 1
+set LASTBIN(y) 1
+showstatus "Loading camera API"
+
+inspectapi CCameraIO
+refreshcamdata
+trace variable CONFIG w watchconfig
+trace variable SCOPE w watchscope
+monitortemp
+wm withdraw .status
+wm geometry . +20+30
+bind . <Alt-p> {toggle .p}
+bind . <Alt-c> {toggle .cal}
+bind . <Alt-d> {toggle .drift}
+bind .p <Alt-p> {toggle .p}
+bind .p <Alt-c> {toggle .cal}
+bind .p <Alt-d> {toggle .drift}
+bind .cal <Alt-p> {toggle .p}
+bind .cal <Alt-c> {toggle .cal}
+bind .cal <Alt-d> {toggle .drift}
+bind .drift <Alt-p> {toggle .p}
+bind .drift <Alt-c> {toggle .cal}
+bind .drift <Alt-d> {toggle .drift}
+
+
+focus .
+
+wm protocol .countdown WM_DELETE_WINDOW {wm withdraw .countdown}
+wm protocol .psite  WM_DELETE_WINDOW {wm withdraw .psite}
+wm protocol .status WM_DELETE_WINDOW {wm withdraw .status}
+wm protocol .drift  WM_DELETE_WINDOW {wm withdraw .drift}
+wm protocol .cal    WM_DELETE_WINDOW {wm withdraw .cal}
+wm protocol .p      WM_DELETE_WINDOW {wm withdraw .p}
+wm protocol .       WM_DELETE_WINDOW {wm withdraw .status}
+
+#ap7p  set_biascols 1 7, set bic 4
+#kx260 set_biascols 1 5, set bic 2

@@ -1,0 +1,4 @@
+
+g++ -O2 -g -fpic -DWall -DLINUX -I../../include -I.  -I./ApogeeNet -I./FpgaRegs -DHAVE_STRERROR -DALTA_NET testTDI.cpp -o testTDI ApogeeNet.o ApogeeNetLinux.o ApnCamData*.o ApnCamTable.o ApnCamera.o  ApnCamera_NET.o -L/opt/apogee/lib -lcurl -lz
+
+g++ -O2 -g -fpic -DWall -DLINUX -I../../include -I.  -I./ApogeeUsb -I./FpgaRegs -DHAVE_STRERROR ApogeeUsbLinux.o ApnCamData*.o ApnCamTable.o ApnCamera.o ApnCamera_USB.o  /opt/apogee/lib/libusb.so testTDIu.cpp -o testTDIu
