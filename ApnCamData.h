@@ -35,7 +35,7 @@ typedef struct _APN_HPATTERN_FILE {
 	unsigned short	*SigPatternData;
 } APN_HPATTERN_FILE;
 
-typedef enum ApnAdType {
+enum ApnAdType {
 	ApnAdType_None,
 	ApnAdType_Alta_Sixteen,
 	ApnAdType_Alta_Twelve,
