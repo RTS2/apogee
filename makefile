@@ -104,10 +104,9 @@ apogee_NET.so: CamData
 	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnCamera_Linux.cpp
 	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApogeeNet/ApogeeNet.cpp
 	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApogeeNet/ApogeeNetLinux.c 
-	$(CC) $(CPPFLAGS) $(ALTAINC) -c apogeeNET_wrap.c
 	$(CC) $(LDFLAGS) ApnCamera.o ApnCamera_Linux.o ApnCamera_NET.o \
 			ApogeeNet.o ApogeeNetLinux.o ApnCamData*.o ApnCamTable.o \
-			apogeeNET_wrap.o -o apogee_NET.so -I. -lcurl -lz
+			-o apogee_NET.so -I. -lcurl -lz
 
 
 test_altae: apogee_NET.so
