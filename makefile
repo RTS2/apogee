@@ -57,14 +57,10 @@ apogee_USB.so: CamData
 	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnCamera_USB.cpp
 	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnCamera_Linux.cpp
 	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApogeeUsb/ApogeeUsbLinux.cpp 
-	$(CC) $(LDFLAGS) ApnCamera.o ApnCamera_Linux.o ApnCamera_USB.o \
-			ApogeeUsbLinux.o ApnCamData*.o ApnCamTable.o \
-			-o apogee_USB.so -I. -lusb
-
-filter_USB.so:
 	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnFilterWheel.cpp
-	$(CC) $(LDFLAGS) ApnFilterWheel.o \
-			 -o filter_USB.so -I. -lusb apogee_USB.so
+	$(CC) $(LDFLAGS) ApnCamera.o ApnCamera_Linux.o ApnCamera_USB.o \
+			ApogeeUsbLinux.o ApnCamData*.o ApnCamTable.o ApnFilterWheel.o \
+			-o apogee_USB.so -I. -lusb
 
 serial_USB.so:
 	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnSerial.cpp
