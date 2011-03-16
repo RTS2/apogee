@@ -930,7 +930,7 @@ unsigned short CApnCamera::read_FirmwareVersion()
 
 void CApnCamera::read_CameraModel( )
 {
-	char szModel[256]; 
+	char szModel[256]; 
 	ApnCamModelLookup( m_pvtCameraID, m_pvtFirmwareVersion, GetCameraInterface(), szModel );
 
 //	*BufferLength = strlen( szModel );

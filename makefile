@@ -63,10 +63,9 @@ apogee_USB.so: CamData
 
 filter_USB.so:
 	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnFilterWheel.cpp
-	$(SWIG) $(SWIGFLAGS) filterUSB.i
 	$(CC) $(CPPFLAGS) $(ALTAINC) -c filterUSB_wrap.c
 	$(CC) $(LDFLAGS) ApnFilterWheel.o filterUSB_wrap.o \
-			 -o filter_USB.so -I. /opt/apogee/lib/libusb.so /opt/apogee/lib/apogee_USB.so
+			 -o filter_USB.so -I. -lusb apogee_USB.so
 
 serial_USB.so:
 	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnSerial.cpp
