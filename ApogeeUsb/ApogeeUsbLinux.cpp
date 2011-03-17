@@ -210,11 +210,11 @@ APN_USB_TYPE ApnUsbOpen( unsigned short DevNumber ,  char *SysDeviceName )
 
 	if (found == 0 || hDevice == 0) return APN_USB_ERR_OPEN;
 
-#ifdef OSX
-	usb_set_configuration(hDevice, 0x0);
+//#ifdef OSX
+	usb_set_configuration(hDevice, 0x1);
 	usb_claim_interface(hDevice, 0x0);
 	printf("DRIVER: claimed interface\n");
-#endif
+//#endif
 
 	g_hSysDriver		= hDevice;
 	g_UsbImgSizeBytes	= 0;
@@ -1311,13 +1311,19 @@ APN_USB_TYPE ApnUsbReadControlPort( unsigned char	*ControlValue,
 {
 	bool			Success;
 	unsigned short	TempValue;
-	
+
+/*	
 	Success = ApnUsbCreateRequest( VND_APOGEE_CONTROL_PORT,
 								   true,
 								   0,
 								   2,
 								   2,
 								   (unsigned char *)&TempValue );
+*/
+        Success = usb_control_msg((struct usb_dev_handle *)g_hSysDriver,
+                                USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
+                                VND_APOGEE_CONTROL_PORT,
+                                2, 0, (char *)&TempValue, 2, 10000);
 
 	*ControlValue	= TempValue & 0x00FF;
 	*OptionPinValue	= (TempValue & 0xFF00) >> 8;
@@ -1337,12 +1343,20 @@ APN_USB_TYPE ApnUsbWriteControlPort( unsigned char	ControlValue,
 	TempValue = OptionPinValue << 8;
 	TempValue |= ControlValue;
 
+/*
 	Success = ApnUsbCreateRequest( VND_APOGEE_CONTROL_PORT,
 								   false,
 								   0,
 								   2,
 								   2,
 								   (unsigned char *)&TempValue );
+*/
+
+       Success = usb_control_msg((struct usb_dev_handle *)g_hSysDriver,
+			USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
+			VND_APOGEE_CONTROL_PORT,
+			2, 0, (char *)&TempValue, 2, 10000);
+
 
 	return APN_USB_SUCCESS;
 }
