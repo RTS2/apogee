@@ -73,6 +73,7 @@ extern int usb_debug;
 #define USB_ALTA_VENDOR_ID	0x125c
 #define USB_ALTA_PRODUCT_ID	0x0010
 #define USB_ASCENT_PRODUCT_ID	0x0020
+#define USB_FILTER_PRODUCT_ID	0x0100
 #define USB_DIR_IN  USB_ENDPOINT_IN
 #define USB_DIR_OUT USB_ENDPOINT_OUT
 
@@ -185,7 +186,8 @@ APN_USB_TYPE ApnUsbOpen( unsigned short DevNumber ,  char *SysDeviceName )
 		for(dev = bus->devices; dev && !found; dev = dev->next) {
 			if (dev->descriptor.idVendor == USB_ALTA_VENDOR_ID && 
 			     ( (dev->descriptor.idProduct == USB_ALTA_PRODUCT_ID) ||
-                               (dev->descriptor.idProduct == USB_ASCENT_PRODUCT_ID) ) ) {
+                               (dev->descriptor.idProduct == USB_ASCENT_PRODUCT_ID) ||
+                               (dev->descriptor.idProduct == USB_FILTER_PRODUCT_ID) ) ) {
 				found = found+1;
 				if (found == DevNumber) {
 					hDevice = usb_open(dev);

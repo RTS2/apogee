@@ -78,7 +78,9 @@ bool CApnFilterWheel::Init( Apn_Filter FilterType, unsigned long DeviceNum )
 
 	ApnUsbReadVendorInfo( &m_VendorId, &m_ProductId, &m_DeviceId );
 
-	if ( m_ProductId != 0x0100 )
+	// NOTE: ApnUsbReadVendorInfo returns 0x0010 as the productID, no
+	// matter the device!
+	if ( m_ProductId != 0x0010 )
 	{
 		return false;
 	}
