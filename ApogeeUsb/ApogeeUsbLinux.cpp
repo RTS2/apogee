@@ -170,7 +170,7 @@ APN_USB_TYPE ApnUsbOpen( unsigned short DevNumber ,  char *SysDeviceName )
 	struct usb_bus *bus;
 	struct usb_device *dev;
 //	struct usb_dev_;
-	struct usb_dev_handle	*hDevice;
+	struct usb_dev_handle	*hDevice = 0;
 
 	usb_init();
 
@@ -208,7 +208,7 @@ APN_USB_TYPE ApnUsbOpen( unsigned short DevNumber ,  char *SysDeviceName )
 		}
 	}
 
-	if (found == 0) return APN_USB_ERR_OPEN;
+	if (found == 0 || hDevice == 0) return APN_USB_ERR_OPEN;
 
 #ifdef OSX
 	usb_set_configuration(hDevice, 0x0);
