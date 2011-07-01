@@ -1,0 +1,45 @@
+#
+# APOGEE makefile for linux
+# $Id: Makefile.svr4,v 1.4 2004/02/15 07:34:43 rfactory Exp $
+#
+
+
+DEVHOME		= .
+INSTALL_DIR	= /opt/apogee/lib
+TCLSRC = /opt/apogee/extern/tcl8.3.1/generic
+TKSRC = /opt/apogee/extern/tk8.3.1/generic                                   
+
+
+
+.KEEP_STATE:
+CC =	g++
+SWIG = /opt/apogee/bin/swig
+
+INCDIR		= $(DEVHOME)
+PRIVATEINCDIR	= ../../include
+GUIINC          = /opt/apogee/include
+ALTAINC		= -I./ApogeeUsb -I./ApogeeNet -I./FpgaRegs -DHAVE_STRERROR
+CPPFLAGS	= -O2 -g -fpic -DWall -DLINUX -Iinclude -I.
+SWIGFLAGS	= -tcl8 -c++ -I/opt/apogee/lib/swig1.3 -I/opt/apogee/lib/swig1.3/tcl
+LDFLAGS		= -shared -O2 -g
+
+all: apogee_USB.so apogee_NET.so
+
+include models_bare.mak
+
+apogee_USB.so: $(MODELS) ApnCamera.o ApnCamera_USB.o ApnCamera_Linux.o ApogeeUsb/ApogeeUsbLinux.o ApnFilterWheel.o
+	$(CC) $(LDFLAGS) -lusb -o $@ $^
+
+apogee_NET.so: $(MODELS) ApnCamera.o ApnCamera_NET.o ApnCamera_Linux.o ApogeeNet/ApogeeNet.o ApogeeNet/ApogeeNetLinux.o 
+	$(CC) $(LDFLAGS) -lcurl -lz -o $@ $^
+
+.cpp.o:
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c $< -o $@
+
+clean:
+	rm -f *.o ApogeeUsb/*.o ApogeeNet/*.o *.so
+
+FORCE:
+
+
+
