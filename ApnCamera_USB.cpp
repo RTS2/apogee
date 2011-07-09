@@ -136,7 +136,7 @@ bool CApnCamera::InitDriver( unsigned long	CamIdA,
 	// The loopback test was successful.  Proceed with initialization.
 	if ( InitDefaults() != 0 )
 		return false;
-
+	
 	// Done
 	AltaDebugOutputString( "APOGEE.DLL - CApnCamera::InitDriver() -> END" );
 

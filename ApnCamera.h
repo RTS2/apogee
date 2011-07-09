@@ -29,6 +29,7 @@
 #include "ApnCamData_KAF1602E.h"
 #include "ApnCamData_KAF16801E.h"
 #include "ApnCamData_KAF16803.h"
+#include "ApnCamData_KAF16803E.h"
 #include "ApnCamData_KAF3200E.h"
 #include "ApnCamData_KAF6303E.h"
 #include "ApnCamData_KAF09000.h"

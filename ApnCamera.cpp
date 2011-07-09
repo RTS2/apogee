@@ -3629,6 +3629,9 @@ long CApnCamera::LookupAltaCameraId( unsigned short CameraId )
 	case APN_ALTA_KAF16803_CAM_ID:
 		m_ApnSensorInfo = new CApnCamData_KAF16803;
 		break;
+	case APN_ALTA_KAF16803E_CAM_ID:
+		m_ApnSensorInfo = new CApnCamData_KAF16803E;
+		break;
 	case APN_ALTA_KAF09000_CAM_ID:
 		m_ApnSensorInfo = new CApnCamData_KAF09000;
 		break;
