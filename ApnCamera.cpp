@@ -3592,6 +3592,8 @@ unsigned short CApnCamera::CalculateGuiderRelayTimeCounts( double GuideDuration 
 
 long CApnCamera::LookupAltaCameraId( unsigned short CameraId )
 {
+	char szOutputText[128];
+
 	switch ( CameraId & FPGA_MASK_CAMERA_ID_ALTA )
 	{
 	case APN_ALTA_KAF0401E_CAM_ID:
@@ -3751,7 +3753,8 @@ long CApnCamera::LookupAltaCameraId( unsigned short CameraId )
 		break;
 	
 	default:
-                AltaDebugOutputString("Unknow camera - please update driver");
+		AltaDebugPrint( szOutputText, "APOGEE.DLL - unknow model %d", CameraId & FPGA_MASK_CAMERA_ID_ALTA );
+                AltaDebugOutputString( szOutputText );
 		return 1;
 		break;
 	}
