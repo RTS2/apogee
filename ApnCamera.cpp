@@ -3751,6 +3751,7 @@ long CApnCamera::LookupAltaCameraId( unsigned short CameraId )
 		break;
 	
 	default:
+                AltaDebugOutputString("Unknow camera - please update driver");
 		return 1;
 		break;
 	}
