@@ -65,9 +65,9 @@ void CApnCamData_KAF16803D7D9::Initialize()
 	m_TempBackoffPoint = 2;
 	m_PrimaryADType = ApnAdType_Alta_Sixteen;
 	m_AlternativeADType = ApnAdType_Alta_Twelve;
-	m_PrimaryADLatency = 1;
-	m_AlternativeADLatency = 12;
-	m_IRPreflashTime = 160;
+	//m_PrimaryADLatency = 1;
+	//m_AlternativeADLatency = 12;
+	//m_IRPreflashTime = 160;
 	m_DefaultGainLeft = 100;
 	m_DefaultOffsetLeft = 255;
 	m_DefaultGainRight = 0;
