@@ -42,6 +42,7 @@ CamData:
 	$(CC) $(CPPFLAGS) -c ApnCamData_KAF1602EB.cpp
 	$(CC) $(CPPFLAGS) -c ApnCamData_KAF16801E.cpp
 	$(CC) $(CPPFLAGS) -c ApnCamData_KAF16803.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF16803D7D9.cpp
 	$(CC) $(CPPFLAGS) -c ApnCamData_KAF3200E.cpp
 	$(CC) $(CPPFLAGS) -c ApnCamData_KAF3200EB.cpp
 	$(CC) $(CPPFLAGS) -c ApnCamData_KAF6303E.cpp

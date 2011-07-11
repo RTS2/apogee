@@ -1,9 +1,8 @@
 /////////////////////////////////////////////////////////////
 //
-// ApnCamData_KAF16803E.h:  Interface file for the CApnCamData_KAF16803E class.
+// ApnCamData_KAF16803D7D9.h:  Interface file for the CApnCamData_KAF16803D7D9 class.
 //
 // Copyright (c) 2003-2007 Apogee Instruments, Inc.
-// Copyright (c) 2011      Petr Kubanek <petr@kubanek.net>
 //
 /////////////////////////////////////////////////////////////
 
@@ -13,11 +12,11 @@
 
 #include "ApnCamData.h"
 
-class CApnCamData_KAF16803E : public CApnCamData
+class CApnCamData_KAF16803D7D9 : public CApnCamData
 {
 public:
-	CApnCamData_KAF16803E();
-	virtual ~CApnCamData_KAF16803E();
+	CApnCamData_KAF16803D7D9();
+	virtual ~CApnCamData_KAF16803D7D9();
 
 	void Initialize();
 
