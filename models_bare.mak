@@ -41,6 +41,7 @@ MODELS=	\
 	ApnCamData_KAF1602EB.o	\
 	ApnCamData_KAF16801E.o	\
 	ApnCamData_KAF16803.o	\
+	ApnCamData_KAF16803D7D9.o \
 	ApnCamData_KAF16803E.o	\
 	ApnCamData_KAF3200E.o	\
 	ApnCamData_KAF3200EB.o	\
